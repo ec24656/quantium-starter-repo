@@ -1,38 +1,38 @@
 import pandas as pd
+import os
 from dash import Dash, html, dcc, Input, Output
 import plotly.express as px
 
-# Load data
-df = pd.read_csv("task1_completed.csv")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+data_path = os.path.join(BASE_DIR, "data")
 
-# Clean + prepare
+files = [
+    "daily_sales_data_0.csv",
+    "daily_sales_data_1.csv",
+    "daily_sales_data_2.csv"
+]
+
+df_list = [pd.read_csv(os.path.join(data_path, f)) for f in files]
+
+df = pd.concat(df_list, ignore_index=True)
+
+df = df[df["product"] == "pink morsel"]
+df["sales"] = df["price"] * df["quantity"]
 df["date"] = pd.to_datetime(df["date"])
-df["sales"] = pd.to_numeric(df["sales"], errors="coerce")
-df = df.sort_values("date")
 
-# Initialize app
 app = Dash(__name__)
 
-# Layout
 app.layout = html.Div(
-    style={"backgroundColor": "#f4f6f8", "padding": "20px"},
+    style={
+        "textAlign": "center",
+        "backgroundColor": "#f5f5f5",
+        "padding": "20px"
+    },
     children=[
 
-        html.H1(
-            "Soul Foods Sales Visualiser",
-            style={
-                "textAlign": "center",
-                "color": "#2c3e50",
-                "marginBottom": "30px"
-            }
-        ),
+        html.H1("Soul Foods Sales Visualiser"),
 
         html.Div([
-            html.Label(
-                "Select Region:",
-                style={"fontWeight": "bold", "marginRight": "10px"}
-            ),
-
             dcc.RadioItems(
                 id="region-filter",
                 options=[
@@ -45,69 +45,41 @@ app.layout = html.Div(
                 value="all",
                 inline=True
             )
-        ], style={"textAlign": "center", "marginBottom": "20px"}),
+        ]),
 
+        
         dcc.Graph(id="sales-graph")
     ]
 )
 
-# Callback for dynamic updates
+
 @app.callback(
     Output("sales-graph", "figure"),
     Input("region-filter", "value")
 )
 def update_graph(selected_region):
+    filtered_df = df.copy()
 
-    # Filter by region
     if selected_region != "all":
-        filtered_df = df[df["region"].str.lower() == selected_region]
-    else:
-        filtered_df = df.copy()
+        filtered_df = filtered_df[filtered_df["region"] == selected_region]
 
-    # Aggregate daily
-    df_daily = filtered_df.groupby("date", as_index=False)["sales"].sum()
-
-    # Aggregate monthly
-    df_monthly = df_daily.groupby(
-        pd.Grouper(key="date", freq="ME")
-    )["sales"].sum().reset_index()
-
-    # Create figure
-    fig = px.line(
-        df_monthly,
-        x="date",
-        y="sales",
-        title=f"Sales Trend ({selected_region.capitalize()})",
-        labels={"date": "Date", "sales": "Total Sales"}
+    df_grouped = (
+        filtered_df
+        .groupby(pd.Grouper(key="date", freq="ME"))["sales"]
+        .sum()
+        .reset_index()
     )
 
-    # Add price increase line
-    fig.add_shape(
-        type="line",
-        x0="2021-01-15",
-        x1="2021-01-15",
-        y0=0,
-        y1=df_monthly["sales"].max(),
-        line=dict(color="red", dash="dash")
-    )
+    fig = px.line(df_grouped, x="date", y="sales", title="Sales Trend")
 
-    fig.add_annotation(
-        x="2021-01-15",
-        y=df_monthly["sales"].max(),
-        text="Price Increase",
-        showarrow=True,
-        arrowhead=1
-    )
-
-    fig.update_layout(
-        plot_bgcolor="white",
-        paper_bgcolor="#f4f6f8",
-        xaxis_tickangle=-45
+    fig.add_vline(
+        x=pd.to_datetime("2021-01-15"),
+        line_dash="dash",
+        annotation_text="Price Increase"
     )
 
     return fig
 
 
-# Run app
 if __name__ == "__main__":
     app.run(debug=True)
